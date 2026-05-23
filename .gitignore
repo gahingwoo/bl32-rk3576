@@ -1,0 +1,18 @@
+# --- Source trees (too large; apply patches manually) ---
+tfa/
+optee_os/
+build/
+
+# --- Build outputs ---
+out/*.bin
+out/*.itb
+fit-build/
+
+# --- OS junk ---
+.DS_Store
+*.swp
+*~
+
+# --- Keep these ---
+!out/rk3576-optee.dts
+!out/rk3576-optee.dtbo

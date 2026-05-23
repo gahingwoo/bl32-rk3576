@@ -1,0 +1,22 @@
+diff --git a/core/arch/arm/plat-rockchip/conf.mk b/core/arch/arm/plat-rockchip/conf.mk
+index ec75f85..42fcc42 100644
+--- a/core/arch/arm/plat-rockchip/conf.mk
++++ b/core/arch/arm/plat-rockchip/conf.mk
+@@ -110,9 +110,14 @@ CFG_TZDRAM_SIZE  ?= 0x02000000
+ CFG_SHMEM_START  ?= 0x42400000
+ CFG_SHMEM_SIZE   ?= 0x00400000
+ 
+-# Debug UART -- UART2 is the default Rockchip debug console on RK3576 boards.
+-CFG_EARLY_CONSOLE_BASE ?= UART2_BASE
+-CFG_EARLY_CONSOLE_SIZE ?= UART2_SIZE
++# Debug UART -- match TF-A's RK_DBG_UART_BASE (UART0 @ 0x2ad40000) so the
++# OP-TEE banner appears on the same serial cable as the BL31 log. Force
++# CFG_EARLY_CONSOLE on: TF-A does not hand a DT pointer down to BL32, so
++# the DT-based console probe never runs and the early console is the only
++# way to get any OP-TEE output.
++CFG_EARLY_CONSOLE := y
++CFG_EARLY_CONSOLE_BASE ?= UART0_BASE
++CFG_EARLY_CONSOLE_SIZE ?= UART0_SIZE
+ CFG_EARLY_CONSOLE_BAUDRATE ?= 1500000
+ CFG_EARLY_CONSOLE_CLK_IN_HZ ?= 24000000
+ endif
