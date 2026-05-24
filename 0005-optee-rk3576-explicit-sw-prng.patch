@@ -1,0 +1,75 @@
+From ae330ebe410b8a796c5e468511a84fc17124f680 Mon Sep 17 00:00:00 2001
+From: gahingwoo <huhuvmb88@outlook.com>
+Date: Sun, 24 May 2026 20:23:25 +1200
+Subject: [PATCH] plat-rockchip: rk3576: explicit software PRNG (TRNG_S address
+ unconfirmed)
+
+The secure TRNG base address on RK3576 is not documented in the public
+TF-A headers, mainline DTS, or Rockchip BSP for the secure side; only
+the non-secure TRNG at 0x2a410000 is exposed.  The inferred 0x2a440000
+slot does not respond on Radxa ROCK 4D hardware (SW_DRNG_ACK never
+sets).  Until the TRM is consulted, force CFG_WITH_SOFTWARE_PRNG=y so
+that crypto_rng_read() uses Fortuna and HUK derivation / secure storage
+/ stack canaries all work without a hardware TRNG.
+
+Signed-off-by: gahingwoo <huhuvmb88@outlook.com>
+---
+ core/arch/arm/plat-rockchip/conf.mk           | 5 +++++
+ core/arch/arm/plat-rockchip/platform_config.h | 6 +++++-
+ core/arch/arm/plat-rockchip/platform_rk3576.c | 7 ++++---
+ 3 files changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/core/arch/arm/plat-rockchip/conf.mk b/core/arch/arm/plat-rockchip/conf.mk
+index fdd80e1..8cc2abe 100644
+--- a/core/arch/arm/plat-rockchip/conf.mk
++++ b/core/arch/arm/plat-rockchip/conf.mk
+@@ -103,6 +103,11 @@ $(call force,CFG_CRYPTO_WITH_CE,y)
+ # which defaults to n until the index is confirmed.
+ $(call force,CFG_ROCKCHIP_OTP,y)
+ 
++# RNG: the secure TRNG base address on RK3576 has not been confirmed;
++# the inferred 0x2a440000 does not respond on Radxa ROCK 4D hardware.
++# Use the OP-TEE software PRNG (Fortuna) until the TRM is consulted.
++$(call force,CFG_WITH_SOFTWARE_PRNG,y)
++
+ # CFG_RK_SECURE_BOOT intentionally NOT forced on: the RSA-hash OTP index
+ # for RK3576 is unknown.  Enable by hand once the TRM is consulted.
+ 
+diff --git a/core/arch/arm/plat-rockchip/platform_config.h b/core/arch/arm/plat-rockchip/platform_config.h
+index 084386d..20c2055 100644
+--- a/core/arch/arm/plat-rockchip/platform_config.h
++++ b/core/arch/arm/plat-rockchip/platform_config.h
+@@ -215,7 +215,11 @@
+ 
+ /*
+  * NOTE: The following blocks exist on RK3576 but their secure-side
+- * register layouts have not been cross-checked against the TRM:
++ * register layouts / base addresses have not been confirmed against
++ * the TRM:
++ *   - Secure TRNG          (inferred 0x2a440000 does NOT respond on
++ *                           Radxa ROCK 4D hardware; OP-TEE falls back
++ *                           to CFG_WITH_SOFTWARE_PRNG=y instead.)
+  *   - Secure crypto engine @ 0x2a430000
+  *   - Key Ladder           @ 0x2a420000
+  *   - OTP Mask             @ 0x2a4d0000
+diff --git a/core/arch/arm/plat-rockchip/platform_rk3576.c b/core/arch/arm/plat-rockchip/platform_rk3576.c
+index 764444f..a2a76d9 100644
+--- a/core/arch/arm/plat-rockchip/platform_rk3576.c
++++ b/core/arch/arm/plat-rockchip/platform_rk3576.c
+@@ -140,9 +140,10 @@ static TEE_Result generate_huk_from_prng(struct tee_hw_unique_key *hwkey)
+ 	bool all_zero = true;
+ 
+ 	/*
+-	 * Use the OP-TEE crypto RNG API, which is backed by the software
+-	 * Fortuna PRNG (CFG_WITH_SOFTWARE_PRNG=y) because RK3576 has no
+-	 * dedicated secure TRNG driver yet.  The generated key is ephemeral
++	 * Use the OP-TEE crypto RNG API.  With CFG_WITH_SOFTWARE_PRNG=y
++	 * (default for RK3576: the secure TRNG base address has not been
++	 * confirmed and the inferred 0x2a440000 mapping does not respond)
++	 * this is the Fortuna software PRNG.  The generated key is ephemeral
+ 	 * (lost on reboot) unless OTP provisioning is enabled via
+ 	 * CFG_RK3576_PERSIST_HUK.
+ 	 */
+-- 
+2.43.0
+
