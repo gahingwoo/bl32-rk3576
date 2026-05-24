@@ -1,0 +1,307 @@
+From ce923a039429775b3e239cbbc806e79b719d9eb7 Mon Sep 17 00:00:00 2001
+From: gahingwoo <huhuvmb88@outlook.com>
+Date: Sun, 24 May 2026 18:43:07 +1200
+Subject: [PATCH] plat/rockchip: rk3576: add OTP HUK derivation
+
+Wire up the shared rockchip_otp.c driver for RK3576 and implement
+tee_otp_get_hw_unique_key() using a read-first / SW-PRNG-fallback
+strategy that is safe to deploy before the OTP row layout has been
+verified against the TRM.
+
+platform_config.h:
+  - Define OTP_S_BASE (0x2a480000), OTP_S_SIZE, ROCKCHIP_OTP_HUK_INDEX
+    (0x104, same as RK3588, pending TRM confirmation) and
+    ROCKCHIP_OTP_HUK_SIZE.
+
+conf.mk:
+  - Force CFG_ROCKCHIP_OTP=y so the driver is compiled in.
+  - Leave CFG_RK_SECURE_BOOT off; the RSA-hash index for RK3576 is
+    not yet known.
+
+platform_rk3576.c:
+  - Map OTP_S_BASE into MEM_AREA_IO_SEC.
+  - read_huk_from_otp(): read 16 bytes from ROCKCHIP_OTP_HUK_INDEX;
+    return TEE_ERROR_NO_DATA if the slot is all-zero (unprogrammed).
+  - generate_huk_from_prng(): derive an ephemeral 16-byte key via
+    crypto_rng_read() (Fortuna PRNG, no TRNG driver yet).
+  - write_huk_to_otp(): compiled only when CFG_RK3576_PERSIST_HUK=y;
+    disabled by default to prevent accidental OTP writes.
+  - tee_otp_get_hw_unique_key(): mutex-protected, in-memory cache;
+    tries OTP, falls back to PRNG with an IMSG noting the state.
+
+Signed-off-by: gahingwoo <huhuvmb88@outlook.com>
+---
+ core/arch/arm/plat-rockchip/conf.mk           |  14 +-
+ core/arch/arm/plat-rockchip/platform_config.h |  22 ++-
+ core/arch/arm/plat-rockchip/platform_rk3576.c | 172 ++++++++++++++++++
+ 3 files changed, 200 insertions(+), 8 deletions(-)
+
+diff --git a/core/arch/arm/plat-rockchip/conf.mk b/core/arch/arm/plat-rockchip/conf.mk
+index 42fcc42..fdd80e1 100644
+--- a/core/arch/arm/plat-rockchip/conf.mk
++++ b/core/arch/arm/plat-rockchip/conf.mk
+@@ -96,11 +96,15 @@ CFG_USER_TA_TARGETS ?= ta_arm64
+ $(call force,CFG_AUTO_MAX_PA_BITS,y)
+ $(call force,CFG_CRYPTO_WITH_CE,y)
+ 
+-# CFG_ROCKCHIP_OTP / CFG_RK_SECURE_BOOT intentionally NOT forced on:
+-# the OTP register protocol and HUK/RSA-hash layout used by the existing
+-# Rockchip OTP driver were derived from RK3588 and have not been verified
+-# against the RK3576 TRM. Enabling them blindly risks bricking the chip.
+-# They can be turned on by hand once the user has validated the layout.
++# Enable the shared Rockchip Secure OTP driver (read path).
++# The HUK slot index (ROCKCHIP_OTP_HUK_INDEX = 0x104) is carried over
++# from RK3588 and has not been verified against the RK3576 TRM.  Reading
++# is safe; writing (OTP provisioning) is gated by CFG_RK3576_PERSIST_HUK
++# which defaults to n until the index is confirmed.
++$(call force,CFG_ROCKCHIP_OTP,y)
++
++# CFG_RK_SECURE_BOOT intentionally NOT forced on: the RSA-hash OTP index
++# for RK3576 is unknown.  Enable by hand once the TRM is consulted.
+ 
+ # TEE secure memory: starts after the TF-A BL31 reservation.
+ # TF-A pins BL31 inside 0x40000000..0x40100000 (TZRAM = RK_DRAM_BASE + 1 MB).
+diff --git a/core/arch/arm/plat-rockchip/platform_config.h b/core/arch/arm/plat-rockchip/platform_config.h
+index 7b48197..084386d 100644
+--- a/core/arch/arm/plat-rockchip/platform_config.h
++++ b/core/arch/arm/plat-rockchip/platform_config.h
+@@ -195,18 +195,34 @@
+ /* DRAM base -- from TF-A: RK_DRAM_BASE */
+ #define RK_DRAM_BASE		0x40000000
+ 
++/*
++ * Secure OTP (OTP_S) -- accessible from secure world only.
++ *
++ * Base address from TF-A rk3576_def.h (RK3576_OTP_S_BASE).
++ * Register offsets follow the same Rockchip auto-mode protocol used by
++ * the shared rockchip_otp.c driver (same IP block as RK3588).
++ *
++ * HUK layout: ROCKCHIP_OTP_HUK_INDEX = 0x104 is carried over from
++ * RK3588.  It MUST be verified against the RK3576 TRM before enabling
++ * OTP-write provisioning (CFG_RK3576_PERSIST_HUK).  A wrong index
++ * would permanently burn the wrong OTP row.  Reading is safe regardless.
++ */
++#define OTP_S_BASE			0x2a480000
++#define OTP_S_SIZE			SIZE_K(4)
++
++#define ROCKCHIP_OTP_HUK_INDEX		0x104	/* TODO: verify vs RK3576 TRM */
++#define ROCKCHIP_OTP_HUK_SIZE		0x4	/* 4 words = 16 bytes */
++
+ /*
+  * NOTE: The following blocks exist on RK3576 but their secure-side
+  * register layouts have not been cross-checked against the TRM:
+  *   - Secure crypto engine @ 0x2a430000
+  *   - Key Ladder           @ 0x2a420000
+- *   - Secure OTP           @ 0x2a480000   (OTP_S_BASE)
+  *   - OTP Mask             @ 0x2a4d0000
+  *   - Secure timers        @ 0x2a4a0000 / 0x2a4b0000
+  *   - Secure watchdog      @ 0x2a4c0000
+  *   - DCF                  @ 0x2a490000
+- * Add them here once their behaviour is confirmed; until then we rely on
+- * CFG_WITH_SOFTWARE_PRNG=y and avoid CFG_ROCKCHIP_OTP / CFG_RK_SECURE_BOOT.
++ * Add them here once their behaviour is confirmed.
+  */
+ 
+ #else
+diff --git a/core/arch/arm/plat-rockchip/platform_rk3576.c b/core/arch/arm/plat-rockchip/platform_rk3576.c
+index 3956ada..764444f 100644
+--- a/core/arch/arm/plat-rockchip/platform_rk3576.c
++++ b/core/arch/arm/plat-rockchip/platform_rk3576.c
+@@ -4,11 +4,18 @@
+  */
+ 
+ #include <common.h>
++#include <drivers/rockchip_otp.h>
+ #include <io.h>
++#include <kernel/mutex.h>
+ #include <kernel/panic.h>
++#include <kernel/tee_common_otp.h>
+ #include <mm/core_memprot.h>
+ #include <platform.h>
+ #include <platform_config.h>
++#include <crypto/crypto.h>
++#include <stdlib_ext.h>
++#include <string.h>
++#include <string_ext.h>
+ #include <trace.h>
+ #include <util.h>
+ 
+@@ -41,6 +48,7 @@
+ 	(((((top_mb) - 1) & 0x7fff) << 16) | ((base_mb) & 0x7fff))
+ 
+ register_phys_mem_pgdir(MEM_AREA_IO_SEC, SYS_SGRF_FW_BASE, SYS_SGRF_FW_SIZE);
++register_phys_mem_pgdir(MEM_AREA_IO_SEC, OTP_S_BASE, OTP_S_SIZE);
+ 
+ int platform_secure_ddr_region(int rgn, paddr_t st, size_t sz)
+ {
+@@ -77,3 +85,167 @@ int platform_secure_ddr_region(int rgn, paddr_t st, size_t sz)
+ 
+ 	return 0;
+ }
++
++/* -----------------------------------------------------------------------
++ * Hardware Unique Key (HUK) -- Secure OTP-backed key derivation
++ *
++ * The shared rockchip_otp.c driver programs the Secure OTP at OTP_S_BASE
++ * using the same auto-mode register protocol as RK3588.
++ *
++ * OTP write (provisioning) is controlled by CFG_RK3576_PERSIST_HUK.
++ * Leave it off (default) until ROCKCHIP_OTP_HUK_INDEX is verified against
++ * the RK3576 TRM -- writing the wrong row is irreversible.
++ *
++ * When CFG_RK3576_PERSIST_HUK=n the first-boot HUK is derived from the
++ * software PRNG; it will differ across reboots until OTP provisioning is
++ * enabled.  This is intentional: it keeps Stage-1 bringup safe.
++ * -----------------------------------------------------------------------
++ */
++
++static struct mutex huk_mutex = MUTEX_INITIALIZER;
++static struct tee_hw_unique_key *huk_cache;
++
++static TEE_Result read_huk_from_otp(struct tee_hw_unique_key *hwkey)
++{
++	uint32_t buf[ROCKCHIP_OTP_HUK_SIZE] = { };
++	TEE_Result res = TEE_SUCCESS;
++	size_t i = 0;
++
++	static_assert(sizeof(buf) == sizeof(hwkey->data));
++
++	res = rockchip_otp_read_secure(buf, ROCKCHIP_OTP_HUK_INDEX,
++				       ROCKCHIP_OTP_HUK_SIZE);
++	if (res)
++		goto out;
++
++	/* All-zero means the row has never been programmed */
++	for (i = 0; i < ARRAY_SIZE(buf); i++) {
++		if (buf[i] != 0) {
++			memcpy(hwkey->data, buf, sizeof(hwkey->data));
++			goto out;
++		}
++	}
++	res = TEE_ERROR_NO_DATA;
++
++out:
++	memzero_explicit(buf, sizeof(buf));
++	return res;
++}
++
++static TEE_Result generate_huk_from_prng(struct tee_hw_unique_key *hwkey)
++{
++	uint8_t buf[HW_UNIQUE_KEY_LENGTH] = { };
++	TEE_Result res = TEE_SUCCESS;
++	size_t i = 0;
++	bool all_zero = true;
++
++	/*
++	 * Use the OP-TEE crypto RNG API, which is backed by the software
++	 * Fortuna PRNG (CFG_WITH_SOFTWARE_PRNG=y) because RK3576 has no
++	 * dedicated secure TRNG driver yet.  The generated key is ephemeral
++	 * (lost on reboot) unless OTP provisioning is enabled via
++	 * CFG_RK3576_PERSIST_HUK.
++	 */
++	res = crypto_rng_read(buf, sizeof(buf));
++	if (res)
++		goto out;
++
++	for (i = 0; i < sizeof(buf); i++) {
++		if (buf[i] != 0) {
++			all_zero = false;
++			break;
++		}
++	}
++	if (all_zero) {
++		res = TEE_ERROR_NO_DATA;
++		goto out;
++	}
++
++	memcpy(hwkey->data, buf, sizeof(hwkey->data));
++
++out:
++	memzero_explicit(buf, sizeof(buf));
++	return res;
++}
++
++#ifdef CFG_RK3576_PERSIST_HUK
++static TEE_Result write_huk_to_otp(const struct tee_hw_unique_key *hwkey)
++{
++	uint32_t buf[ROCKCHIP_OTP_HUK_SIZE] = { };
++	TEE_Result res = TEE_SUCCESS;
++
++	static_assert(sizeof(buf) == sizeof(hwkey->data));
++
++	memcpy(buf, hwkey->data, sizeof(buf));
++	res = rockchip_otp_write_secure(buf, ROCKCHIP_OTP_HUK_INDEX,
++					ROCKCHIP_OTP_HUK_SIZE);
++	memzero_explicit(buf, sizeof(buf));
++	return res;
++}
++#endif /* CFG_RK3576_PERSIST_HUK */
++
++TEE_Result tee_otp_get_hw_unique_key(struct tee_hw_unique_key *hwkey)
++{
++	TEE_Result res = TEE_SUCCESS;
++
++	if (!hwkey)
++		return TEE_ERROR_BAD_PARAMETERS;
++
++	mutex_lock(&huk_mutex);
++
++	if (huk_cache) {
++		memcpy(hwkey->data, huk_cache->data, sizeof(hwkey->data));
++		goto out;
++	}
++
++	huk_cache = malloc(sizeof(*huk_cache));
++	if (!huk_cache) {
++		res = TEE_ERROR_OUT_OF_MEMORY;
++		goto out;
++	}
++
++	/* Try the Secure OTP first */
++	res = read_huk_from_otp(huk_cache);
++	if (res == TEE_SUCCESS)
++		goto copy;
++
++	if (res != TEE_ERROR_NO_DATA) {
++		EMSG("RK3576: OTP HUK read failed: 0x%x", res);
++		goto fail;
++	}
++
++	/*
++	 * OTP slot is empty -- generate a new HUK via PRNG.
++	 * Persist it only when the caller has explicitly opted in by setting
++	 * CFG_RK3576_PERSIST_HUK=y (requires TRM verification of
++	 * ROCKCHIP_OTP_HUK_INDEX first).
++	 */
++	res = generate_huk_from_prng(huk_cache);
++	if (res) {
++		EMSG("RK3576: HUK generation failed: 0x%x", res);
++		goto fail;
++	}
++
++#ifdef CFG_RK3576_PERSIST_HUK
++	res = write_huk_to_otp(huk_cache);
++	if (res) {
++		EMSG("RK3576: OTP HUK write failed: 0x%x", res);
++		goto fail;
++	}
++	IMSG("RK3576: HUK persisted to Secure OTP");
++#else
++	IMSG("RK3576: using ephemeral HUK (CFG_RK3576_PERSIST_HUK=n)");
++#endif
++
++copy:
++	memcpy(hwkey->data, huk_cache->data, sizeof(hwkey->data));
++	goto out;
++
++fail:
++	free_wipe(huk_cache);
++	huk_cache = NULL;
++
++out:
++	mutex_unlock(&huk_mutex);
++	return res;
++}
+-- 
+2.43.0
+

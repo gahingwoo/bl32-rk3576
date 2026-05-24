@@ -63,6 +63,35 @@ cd optee_os
 git apply ../0003-optee-rk3576-switch-debug-uart-to-uart0-force-early-console.patch
 ```
 
+### `0004-optee-rk3576-add-otp-huk-derivation.patch`
+Apply to **OP-TEE OS**.
+
+Implements `tee_otp_get_hw_unique_key()` for RK3576 using the shared
+`rockchip_otp.c` driver (same auto-mode IP as RK3588):
+
+- `platform_config.h`: adds `OTP_S_BASE` (`0x2a480000`), `OTP_S_SIZE`,
+  `ROCKCHIP_OTP_HUK_INDEX` (`0x104`, carried over from RK3588 — **must be
+  verified against the RK3576 TRM before enabling OTP writes**),
+  `ROCKCHIP_OTP_HUK_SIZE`.
+- `conf.mk`: forces `CFG_ROCKCHIP_OTP=y`; leaves `CFG_RK_SECURE_BOOT` off
+  until the RSA-hash OTP index is known.
+- `platform_rk3576.c`: read-first → SW-PRNG-fallback strategy:
+  1. Try to read a pre-burned HUK from the Secure OTP slot.
+  2. If the slot is all-zero (unprogrammed board), generate an ephemeral
+     key via `crypto_rng_read()` (Fortuna PRNG — no TRNG driver yet).
+  3. OTP write (provisioning) is compiled in only when
+     `CFG_RK3576_PERSIST_HUK=y` (off by default).
+
+> **Warning:** `ROCKCHIP_OTP_HUK_INDEX = 0x104` has not been confirmed
+> against the RK3576 TRM. Do **not** enable `CFG_RK3576_PERSIST_HUK`
+> until you have verified this offset; burning the wrong OTP row is
+> irreversible.
+
+```bash
+cd optee_os
+git apply ../0004-optee-rk3576-add-otp-huk-derivation.patch
+```
+
 ---
 
 ## Memory map
