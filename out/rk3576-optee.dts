@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: GPL-2.0
+//
+// Armbian DT overlay: declare OP-TEE for RK3576 devices
+//
+// Reserves the TZDRAM and SHMEM regions used by OP-TEE and exposes the
+// /firmware/optee node so the kernel's optee driver binds via SMC.
+//
+// Memory map (must match TF-A + OP-TEE build):
+//   TZDRAM : 0x40400000 + 32 MiB  - secure, no-map (Linux must not touch)
+//   SHMEM  : 0x42400000 +  4 MiB  - non-secure shared (Linux maps this for
+//                                    OP-TEE communication; no no-map)
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	/*
+	 * Single fragment targeting root ("/") so fdt_overlay_target_offset()
+	 * always succeeds regardless of the base DTB layout.
+	 * overlay_apply_node() will merge into existing reserved-memory and
+	 * create /firmware/optee if absent.
+	 */
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			/* Reserve OP-TEE secure DRAM and shared memory */
+			reserved-memory {
+				/* OP-TEE secure memory: Linux must not map or allocate here */
+				optee@40400000 {
+					reg = <0x0 0x40400000 0x0 0x02000000>;
+					no-map;
+				};
+
+				/* OP-TEE static shared memory: reserved but mappable by Linux */
+				optee-shm@42400000 {
+					reg = <0x0 0x42400000 0x0 0x00400000>;
+				};
+			};
+
+			/* Add /firmware/optee node so the kernel optee driver binds */
+			firmware {
+				optee {
+					compatible = "linaro,optee-tz";
+					method = "smc";
+				};
+			};
+		};
+	};
+};

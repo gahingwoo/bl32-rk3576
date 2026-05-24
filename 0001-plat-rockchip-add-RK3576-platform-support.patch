@@ -1,0 +1,285 @@
+From d820f139ef53ffd74c8afb2fe8f231902a5827c6 Mon Sep 17 00:00:00 2001
+From: Ga Hing Woo <huhvmb88@outlook.com>
+Date: Sat, 23 May 2026 17:54:00 +1200
+Subject: [PATCH] core: arm: plat-rockchip: add RK3576 platform support
+
+Add a new PLATFORM_FLAVOR=rk3576 to plat-rockchip, covering:
+
+  * conf.mk: 8 cores (4xA72 + 4xA53), Cortex armv8-0, GIC-400 (GICv2,
+    no CFG_ARM_GICV3), TZDRAM at 0x40400000..+32MB and static SHMEM at
+    0x42400000..+4MB, UART2 (0x2ad50000) as default debug console at
+    1.5 Mbps / 24 MHz, ta_arm64-only by default.
+
+  * platform_config.h: GIC (0x2a700000), UART0..3, SYS/PMU SGRF and
+    SGRF-Firewall blocks, CRU/SECURE_CRU, SRAM/PMUSRAM, RK_DRAM_BASE.
+    Addresses cross-checked against upstream TF-A rk3576_def.h.
+
+  * platform_rk3576.c: implement platform_secure_ddr_region() through
+    the System SGRF Firewall (FW_SGRF_DDR_RGN/CON at SYS_SGRF_FW_BASE),
+    matching upstream TF-A's fw_*() helpers. TF-A's bl31 already pins
+    region 0 to the BL31 area; OP-TEE adds region >= 1 covering its own
+    TZDRAM, leaving every other firewall setting that TF-A established
+    untouched.
+
+  * sub.mk: hook platform_rk3576.c into the build.
+
+CFG_ROCKCHIP_OTP and CFG_RK_SECURE_BOOT are intentionally NOT forced on
+for this flavor: the OTP register protocol used by the existing
+Rockchip driver was derived from RK3588 and has not been verified
+against the RK3576 TRM. They can be enabled by hand once the layout is
+confirmed.
+
+The PRNG falls back to the OP-TEE software Fortuna implementation
+(CFG_WITH_SOFTWARE_PRNG=y, default), so no RK3576-specific TRNG driver
+is required at this stage.
+
+Build verified with aarch64-linux-gnu-gcc 13.3:
+
+    make CROSS_COMPILE=aarch64-linux-gnu- PLATFORM=rockchip \
+         PLATFORM_FLAVOR=rk3576 CFG_ARM64_core=y CFG_EARLY_CONSOLE=y
+---
+ core/arch/arm/plat-rockchip/conf.mk           | 34 ++++++++
+ core/arch/arm/plat-rockchip/platform_config.h | 82 +++++++++++++++++++
+ core/arch/arm/plat-rockchip/platform_rk3576.c | 79 ++++++++++++++++++
+ core/arch/arm/plat-rockchip/sub.mk            |  1 +
+ 4 files changed, 196 insertions(+)
+ create mode 100644 core/arch/arm/plat-rockchip/platform_rk3576.c
+
+diff --git a/core/arch/arm/plat-rockchip/conf.mk b/core/arch/arm/plat-rockchip/conf.mk
+index e83ea1f..ec75f85 100644
+--- a/core/arch/arm/plat-rockchip/conf.mk
++++ b/core/arch/arm/plat-rockchip/conf.mk
+@@ -83,6 +83,40 @@ CFG_EARLY_CONSOLE_BAUDRATE ?= 1500000
+ CFG_EARLY_CONSOLE_CLK_IN_HZ ?= 24000000
+ endif
+ 
++ifeq ($(PLATFORM_FLAVOR),rk3576)
++include core/arch/arm/cpu/cortex-armv8-0.mk
++$(call force,CFG_TEE_CORE_NB_CORE,8)
++$(call force,CFG_ARM64_core,y)
++$(call force,CFG_WITH_ARM_TRUSTED_FW,y)
++# Only ship 64-bit TAs by default: many users don't have an arm32 cross
++# compiler installed, and RK3576 has no 32-bit-only legacy to support.
++CFG_USER_TA_TARGETS ?= ta_arm64
++# RK3576: 4x Cortex-A72 + 4x Cortex-A53, GIC-400 (GICv2)
++# Do NOT set CFG_ARM_GICV3 (the SoC ships with a v2 GIC).
++$(call force,CFG_AUTO_MAX_PA_BITS,y)
++$(call force,CFG_CRYPTO_WITH_CE,y)
++
++# CFG_ROCKCHIP_OTP / CFG_RK_SECURE_BOOT intentionally NOT forced on:
++# the OTP register protocol and HUK/RSA-hash layout used by the existing
++# Rockchip OTP driver were derived from RK3588 and have not been verified
++# against the RK3576 TRM. Enabling them blindly risks bricking the chip.
++# They can be turned on by hand once the user has validated the layout.
++
++# TEE secure memory: starts after the TF-A BL31 reservation.
++# TF-A pins BL31 inside 0x40000000..0x40100000 (TZRAM = RK_DRAM_BASE + 1 MB).
++# We place OP-TEE 32 MB above that, with 4 MB of static shared memory.
++CFG_TZDRAM_START ?= 0x40400000
++CFG_TZDRAM_SIZE  ?= 0x02000000
++CFG_SHMEM_START  ?= 0x42400000
++CFG_SHMEM_SIZE   ?= 0x00400000
++
++# Debug UART -- UART2 is the default Rockchip debug console on RK3576 boards.
++CFG_EARLY_CONSOLE_BASE ?= UART2_BASE
++CFG_EARLY_CONSOLE_SIZE ?= UART2_SIZE
++CFG_EARLY_CONSOLE_BAUDRATE ?= 1500000
++CFG_EARLY_CONSOLE_CLK_IN_HZ ?= 24000000
++endif
++
+ ifeq ($(platform-flavor-armv8),1)
+ $(call force,CFG_ARM64_core,y)
+ $(call force,CFG_WITH_ARM_TRUSTED_FW,y)
+diff --git a/core/arch/arm/plat-rockchip/platform_config.h b/core/arch/arm/plat-rockchip/platform_config.h
+index 673ce71..7b48197 100644
+--- a/core/arch/arm/plat-rockchip/platform_config.h
++++ b/core/arch/arm/plat-rockchip/platform_config.h
+@@ -127,6 +127,88 @@
+ #define ROCKCHIP_OTP_RSA_HASH_INDEX		0x270
+ #define ROCKCHIP_OTP_RSA_HASH_SIZE		0x8
+ 
++#elif defined(PLATFORM_FLAVOR_rk3576)
++
++/*
++ * RK3576 register addresses sourced from:
++ *   TF-A: plat/rockchip/rk3576/rk3576_def.h (BSD-3-Clause)
++ *   Linux: arch/arm64/boot/dts/rockchip/rk3576.dtsi (GPL-2.0)
++ */
++
++/* GIC-400 (GICv2) — rk3576.dtsi: interrupt-controller@2a701000 */
++#define GIC_BASE		0x2a700000
++#define GIC_SIZE		SIZE_K(128)
++#define GICD_BASE		(GIC_BASE + 0x1000)    /* Distributor */
++#define GICC_BASE		(GIC_BASE + 0x2000)    /* CPU Interface */
++
++/* UARTs — from TF-A rk3576_def.h */
++#define UART0_BASE		0x2ad40000
++#define UART0_SIZE		SIZE_K(4)
++
++#define UART1_BASE		0x27310000     /* PMU domain UART */
++#define UART1_SIZE		SIZE_K(4)
++
++#define UART2_BASE		0x2ad50000     /* Default debug console */
++#define UART2_SIZE		SIZE_K(4)
++
++#define UART3_BASE		0x2ad60000
++#define UART3_SIZE		SIZE_K(4)
++
++/*
++ * SGRF / Firewall registers.
++ *
++ * On RK3576 the DDR/SRAM/CBUF firewall regions and per-master domain
++ * permissions are programmed through the System-SGRF Firewall block.
++ * TF-A's bl31 fully initialises it via fw_init(); OP-TEE only needs the
++ * base address to add a region for its own TZDRAM.
++ *   See plat/rockchip/rk3576/drivers/secure/firewall.{c,h} in TF-A.
++ */
++#define SYS_SGRF_BASE		0x26004000	/* System SGRF		   */
++#define SYS_SGRF_SIZE		SIZE_K(4)
++
++#define SYS_SGRF_FW_BASE	0x26005000	/* System SGRF Firewall    */
++#define SYS_SGRF_FW_SIZE	SIZE_K(4)
++
++#define PMU0SGRF_BASE		0x26000000	/* PMU0 SGRF		   */
++#define PMU0SGRF_SIZE		SIZE_K(4)
++
++#define PMU1SGRF_BASE		0x26002000	/* PMU1 SGRF		   */
++#define PMU1SGRF_SIZE		SIZE_K(4)
++
++#define PMU1SGRF_FW_BASE	0x26003000	/* PMU1 SGRF Firewall	   */
++#define PMU1SGRF_FW_SIZE	SIZE_K(4)
++
++/* CRU (Clock and Reset Unit) */
++#define CRU_BASE		0x27200000
++#define CRU_SIZE		SIZE_K(64)
++
++#define SECURE_CRU_BASE		0x27210000
++#define SECURE_CRU_SIZE		SIZE_K(64)
++
++/* SRAM */
++#define PMUSRAM_BASE		0x3fe70000
++#define PMUSRAM_SIZE		SIZE_K(32)
++
++#define SRAM_BASE		0x3ff80000
++#define SRAM_SIZE		SIZE_K(512)
++
++/* DRAM base -- from TF-A: RK_DRAM_BASE */
++#define RK_DRAM_BASE		0x40000000
++
++/*
++ * NOTE: The following blocks exist on RK3576 but their secure-side
++ * register layouts have not been cross-checked against the TRM:
++ *   - Secure crypto engine @ 0x2a430000
++ *   - Key Ladder           @ 0x2a420000
++ *   - Secure OTP           @ 0x2a480000   (OTP_S_BASE)
++ *   - OTP Mask             @ 0x2a4d0000
++ *   - Secure timers        @ 0x2a4a0000 / 0x2a4b0000
++ *   - Secure watchdog      @ 0x2a4c0000
++ *   - DCF                  @ 0x2a490000
++ * Add them here once their behaviour is confirmed; until then we rely on
++ * CFG_WITH_SOFTWARE_PRNG=y and avoid CFG_ROCKCHIP_OTP / CFG_RK_SECURE_BOOT.
++ */
++
+ #else
+ #error "Unknown platform flavor"
+ #endif
+diff --git a/core/arch/arm/plat-rockchip/platform_rk3576.c b/core/arch/arm/plat-rockchip/platform_rk3576.c
+new file mode 100644
+index 0000000..3956ada
+--- /dev/null
++++ b/core/arch/arm/plat-rockchip/platform_rk3576.c
+@@ -0,0 +1,79 @@
++// SPDX-License-Identifier: BSD-2-Clause
++/*
++ * Copyright (c) 2025, Rockchip RK3576 OP-TEE platform glue.
++ */
++
++#include <common.h>
++#include <io.h>
++#include <kernel/panic.h>
++#include <mm/core_memprot.h>
++#include <platform.h>
++#include <platform_config.h>
++#include <trace.h>
++#include <util.h>
++
++/*
++ * RK3576 DDR firewall register layout (subset).
++ *
++ * On RK3576 the DDR / SRAM / CBUF firewall regions and per-master domain
++ * lookup tables are programmed via the System SGRF Firewall block at
++ * SYS_SGRF_FW_BASE.  TF-A's bl31 (plat/rockchip/rk3576/drivers/secure/
++ * firewall.c) already runs fw_init() during cold boot, which:
++ *   - installs the per-domain lookup so that only secure masters of
++ *     domain 0/7 can reach DDR / SRAM / CBUF protected regions;
++ *   - programs DDR region 0 covering the 1 MB TZRAM that hosts BL31.
++ *
++ * OP-TEE's TZDRAM (CFG_TZDRAM_START..+CFG_TZDRAM_SIZE) sits OUTSIDE the
++ * 1 MB region TF-A protects, so we need to claim our own region.  We do
++ * that by writing FW_SGRF_DDR_RGN(rgn) and OR-ing the matching bit into
++ * FW_SGRF_DDR_CON, leaving every other firewall setting that TF-A
++ * established untouched.
++ *
++ * Register / offset values are copied verbatim from upstream TF-A:
++ *   tfa/plat/rockchip/rk3576/drivers/secure/firewall.h
++ */
++#define FW_SGRF_DDR_RGN(i)		(0x0100 + (i) * 0x4)
++#define FW_SGRF_DDR_RGN_CNT		16
++#define FW_SGRF_DDR_CON			0x0168
++
++/* base / (top - 1) encoded in 1 MB units, both clamped to 15 bits. */
++#define RG_MAP_SECURE(top_mb, base_mb) \
++	(((((top_mb) - 1) & 0x7fff) << 16) | ((base_mb) & 0x7fff))
++
++register_phys_mem_pgdir(MEM_AREA_IO_SEC, SYS_SGRF_FW_BASE, SYS_SGRF_FW_SIZE);
++
++int platform_secure_ddr_region(int rgn, paddr_t st, size_t sz)
++{
++	vaddr_t fw_base = (vaddr_t)phys_to_virt_io(SYS_SGRF_FW_BASE,
++						   SYS_SGRF_FW_SIZE);
++	paddr_t ed = st + sz;
++	uint32_t st_mb = st / SIZE_M(1);
++	uint32_t ed_mb = ed / SIZE_M(1);
++
++	if (!fw_base)
++		panic("RK3576: SYS_SGRF_FW_BASE not mapped");
++
++	/*
++	 * Region 0 belongs to TF-A (BL31).  Reject it so that callers can't
++	 * accidentally trash the BL31 protection.
++	 */
++	if (rgn <= 0 || rgn >= FW_SGRF_DDR_RGN_CNT) {
++		EMSG("RK3576: invalid firewall region %d (use 1..%d)",
++		     rgn, FW_SGRF_DDR_RGN_CNT - 1);
++		return -1;
++	}
++
++	assert(st < ed);
++	/* RK3576 DDR firewall granularity is 1 MB. */
++	assert(st % SIZE_M(1) == 0);
++	assert(ed % SIZE_M(1) == 0);
++
++	DMSG("RK3576: protecting region %d: 0x%" PRIxPA "-0x%" PRIxPA,
++	     rgn, st, ed);
++
++	io_write32(fw_base + FW_SGRF_DDR_RGN(rgn),
++		   RG_MAP_SECURE(ed_mb, st_mb));
++	io_setbits32(fw_base + FW_SGRF_DDR_CON, BIT(rgn));
++
++	return 0;
++}
+diff --git a/core/arch/arm/plat-rockchip/sub.mk b/core/arch/arm/plat-rockchip/sub.mk
+index 693d90e..8754367 100644
+--- a/core/arch/arm/plat-rockchip/sub.mk
++++ b/core/arch/arm/plat-rockchip/sub.mk
+@@ -4,6 +4,7 @@ srcs-y += platform.c
+ srcs-$(PLATFORM_FLAVOR_px30) += platform_px30.c
+ srcs-$(PLATFORM_FLAVOR_rk322x) += platform_rk322x.c
+ srcs-$(PLATFORM_FLAVOR_rk3399) += platform_rk3399.c
++srcs-$(PLATFORM_FLAVOR_rk3576) += platform_rk3576.c
+ srcs-$(PLATFORM_FLAVOR_rk3588) += platform_rk3588.c
+ 
+ ifeq ($(PLATFORM_FLAVOR),rk322x)
+-- 
+2.43.0
+
