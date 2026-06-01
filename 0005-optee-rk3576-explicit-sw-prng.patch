@@ -1,4 +1,4 @@
-From ae330ebe410b8a796c5e468511a84fc17124f680 Mon Sep 17 00:00:00 2001
+From 500d234664fbf12a853be033fd9c51221f360455 Mon Sep 17 00:00:00 2001
 From: gahingwoo <huhuvmb88@outlook.com>
 Date: Sun, 24 May 2026 20:23:25 +1200
 Subject: [PATCH] plat-rockchip: rk3576: explicit software PRNG (TRNG_S address

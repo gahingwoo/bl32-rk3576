@@ -1,3 +1,23 @@
+From 928bf4fe729ce59661880154707a4d7109cfe8ba Mon Sep 17 00:00:00 2001
+From: gahingwoo <huhuvmb88@outlook.com>
+Date: Sun, 24 May 2026 13:52:51 +1200
+Subject: [PATCH] plat-rockchip: rk3576: switch debug UART to UART0 and force
+ early console
+
+Match TF-A's RK_DBG_UART_BASE (UART0 @ 0x2ad40000) so OP-TEE boot
+messages appear on the same serial line as the BL31 log.
+
+Also force CFG_EARLY_CONSOLE=y: TF-A does not pass a DT pointer to
+BL32, so the DT-based console probe never runs. Without the early
+console OP-TEE produces no output on this platform.
+
+Tested on Radxa Rock 4D (RK3576, 12 GiB LPDDR5).
+
+Signed-off-by: gahingwoo <huhuvmb88@outlook.com>
+---
+ core/arch/arm/plat-rockchip/conf.mk | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
 diff --git a/core/arch/arm/plat-rockchip/conf.mk b/core/arch/arm/plat-rockchip/conf.mk
 index ec75f85..42fcc42 100644
 --- a/core/arch/arm/plat-rockchip/conf.mk
@@ -20,3 +40,6 @@ index ec75f85..42fcc42 100644
  CFG_EARLY_CONSOLE_BAUDRATE ?= 1500000
  CFG_EARLY_CONSOLE_CLK_IN_HZ ?= 24000000
  endif
+-- 
+2.43.0
+

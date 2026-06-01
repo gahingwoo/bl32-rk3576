@@ -1,42 +1,32 @@
-From d820f139ef53ffd74c8afb2fe8f231902a5827c6 Mon Sep 17 00:00:00 2001
-From: Ga Hing Woo <huhvmb88@outlook.com>
-Date: Sat, 23 May 2026 17:54:00 +1200
-Subject: [PATCH] core: arm: plat-rockchip: add RK3576 platform support
+From 885393b1203f4cabd3e3c28515f178e97b7a0035 Mon Sep 17 00:00:00 2001
+From: gahingwoo <huhuvmb88@outlook.com>
+Date: Sun, 24 May 2026 13:52:37 +1200
+Subject: [PATCH] plat-rockchip: add support for RK3576
 
-Add a new PLATFORM_FLAVOR=rk3576 to plat-rockchip, covering:
+Add initial platform port for the Rockchip RK3576 SoC
+(4xA72 + 4xA53, GIC-400 / GICv2):
 
-  * conf.mk: 8 cores (4xA72 + 4xA53), Cortex armv8-0, GIC-400 (GICv2,
-    no CFG_ARM_GICV3), TZDRAM at 0x40400000..+32MB and static SHMEM at
-    0x42400000..+4MB, UART2 (0x2ad50000) as default debug console at
-    1.5 Mbps / 24 MHz, ta_arm64-only by default.
+- conf.mk: 8-core config, CFG_ARM64_core, no GICv3, TZDRAM at
+  0x40400000 (+32 MiB), static SHMEM at 0x42400000 (+4 MiB).
 
-  * platform_config.h: GIC (0x2a700000), UART0..3, SYS/PMU SGRF and
-    SGRF-Firewall blocks, CRU/SECURE_CRU, SRAM/PMUSRAM, RK_DRAM_BASE.
-    Addresses cross-checked against upstream TF-A rk3576_def.h.
+- platform_config.h: GIC-400, UART0-3, System SGRF / SGRF-Firewall,
+  PMU0/1 SGRF, CRU/SECURE_CRU, SRAM/PMUSRAM, RK_DRAM_BASE.
+  Addresses cross-checked against TF-A rk3576_def.h.
 
-  * platform_rk3576.c: implement platform_secure_ddr_region() through
-    the System SGRF Firewall (FW_SGRF_DDR_RGN/CON at SYS_SGRF_FW_BASE),
-    matching upstream TF-A's fw_*() helpers. TF-A's bl31 already pins
-    region 0 to the BL31 area; OP-TEE adds region >= 1 covering its own
-    TZDRAM, leaving every other firewall setting that TF-A established
-    untouched.
+- platform_rk3576.c: implement platform_secure_ddr_region() via the
+  System SGRF Firewall (SYS_SGRF_FW_BASE), claiming DDR region >= 1
+  for OP-TEE TZDRAM while leaving TF-A BL31 region 0 untouched.
 
-  * sub.mk: hook platform_rk3576.c into the build.
+- sub.mk: hook platform_rk3576.c into the build.
 
-CFG_ROCKCHIP_OTP and CFG_RK_SECURE_BOOT are intentionally NOT forced on
-for this flavor: the OTP register protocol used by the existing
-Rockchip driver was derived from RK3588 and has not been verified
-against the RK3576 TRM. They can be enabled by hand once the layout is
-confirmed.
+CFG_ROCKCHIP_OTP and CFG_RK_SECURE_BOOT are intentionally not forced
+on: the OTP register layout has not been verified against the RK3576
+TRM and enabling them blindly risks bricking the chip.
 
-The PRNG falls back to the OP-TEE software Fortuna implementation
-(CFG_WITH_SOFTWARE_PRNG=y, default), so no RK3576-specific TRNG driver
-is required at this stage.
+Tested on Radxa Rock 4D (RK3576, 12 GiB LPDDR5) with TF-A v2.14
+and U-Boot 2026.04.
 
-Build verified with aarch64-linux-gnu-gcc 13.3:
-
-    make CROSS_COMPILE=aarch64-linux-gnu- PLATFORM=rockchip \
-         PLATFORM_FLAVOR=rk3576 CFG_ARM64_core=y CFG_EARLY_CONSOLE=y
+Signed-off-by: gahingwoo <huhuvmb88@outlook.com>
 ---
  core/arch/arm/plat-rockchip/conf.mk           | 34 ++++++++
  core/arch/arm/plat-rockchip/platform_config.h | 82 +++++++++++++++++++

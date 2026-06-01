@@ -1,7 +1,7 @@
-From ce923a039429775b3e239cbbc806e79b719d9eb7 Mon Sep 17 00:00:00 2001
+From b88c508043cd1ba5f2a21a4fe46f51b4dbc8c87a Mon Sep 17 00:00:00 2001
 From: gahingwoo <huhuvmb88@outlook.com>
 Date: Sun, 24 May 2026 18:43:07 +1200
-Subject: [PATCH] plat/rockchip: rk3576: add OTP HUK derivation
+Subject: [PATCH] plat-rockchip: rk3576: add OTP HUK derivation
 
 Wire up the shared rockchip_otp.c driver for RK3576 and implement
 tee_otp_get_hw_unique_key() using a read-first / SW-PRNG-fallback
