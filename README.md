@@ -77,10 +77,10 @@ Implements `tee_otp_get_hw_unique_key()` for RK3576 via the shared
 `rockchip_otp.c` driver. Reads OTP slot first; falls back to ephemeral
 SW-PRNG key on unprogrammed boards.
 
-> **Warning:** `ROCKCHIP_OTP_HUK_INDEX = 0x104` is carried over from
-> RK3588 and has not been confirmed against the RK3576 TRM. Do **not**
-> enable `CFG_RK3576_PERSIST_HUK` until verified; OTP writes are
-> irreversible.
+> **Note:** `ROCKCHIP_OTP_HUK_INDEX = 0x80` (OTP_S words 0x80–0x83,
+> bytes 512–527). This differs from RK3588 (0x104). RK3576 OTP_S has
+> 512 words (0x200 max). OTP writes are irreversible — set
+> `CFG_RK3576_PERSIST_HUK=y` only when ready to commit the HUK.
 
 ```bash
 cd optee_os

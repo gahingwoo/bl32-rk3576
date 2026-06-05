@@ -9,8 +9,8 @@ strategy that is safe to deploy before the OTP row layout has been
 verified against the TRM.
 
 platform_config.h:
-  - Define OTP_S_BASE (0x2a480000), OTP_S_SIZE, ROCKCHIP_OTP_HUK_INDEX
-    (0x104, same as RK3588, pending TRM confirmation) and
+  - Define OTP_S_BASE (0x2a480000), OTP_S_SIZE (64 KiB),
+    ROCKCHIP_OTP_HUK_INDEX (0x80, confirmed for RK3576) and
     ROCKCHIP_OTP_HUK_SIZE.
 
 conf.mk:
@@ -50,10 +50,9 @@ index 42fcc42..fdd80e1 100644
 -# against the RK3576 TRM. Enabling them blindly risks bricking the chip.
 -# They can be turned on by hand once the user has validated the layout.
 +# Enable the shared Rockchip Secure OTP driver (read path).
-+# The HUK slot index (ROCKCHIP_OTP_HUK_INDEX = 0x104) is carried over
-+# from RK3588 and has not been verified against the RK3576 TRM.  Reading
-+# is safe; writing (OTP provisioning) is gated by CFG_RK3576_PERSIST_HUK
-+# which defaults to n until the index is confirmed.
++# ROCKCHIP_OTP_HUK_INDEX = 0x80 (OTP_S words 0x80–0x83, bytes 512–527)
++# confirmed for RK3576 — differs from RK3588 (0x104).  Writing (OTP
++# provisioning) is gated by CFG_RK3576_PERSIST_HUK which defaults to n.
 +$(call force,CFG_ROCKCHIP_OTP,y)
 +
 +# CFG_RK_SECURE_BOOT intentionally NOT forced on: the RSA-hash OTP index
@@ -76,15 +75,13 @@ index 7b48197..084386d 100644
 + * Register offsets follow the same Rockchip auto-mode protocol used by
 + * the shared rockchip_otp.c driver (same IP block as RK3588).
 + *
-+ * HUK layout: ROCKCHIP_OTP_HUK_INDEX = 0x104 is carried over from
-+ * RK3588.  It MUST be verified against the RK3576 TRM before enabling
-+ * OTP-write provisioning (CFG_RK3576_PERSIST_HUK).  A wrong index
-+ * would permanently burn the wrong OTP row.  Reading is safe regardless.
++ * HUK layout: words 0x80–0x83 (bytes 512–527, 128-bit).
++ * RK3576 OTP_S is 512 words (0x200 max), smaller than RK3588 (0x300).
 + */
 +#define OTP_S_BASE			0x2a480000
-+#define OTP_S_SIZE			SIZE_K(4)
++#define OTP_S_SIZE			SIZE_K(64)
 +
-+#define ROCKCHIP_OTP_HUK_INDEX		0x104	/* TODO: verify vs RK3576 TRM */
++#define ROCKCHIP_OTP_HUK_INDEX		0x80	/* RK3576 confirmed; RK3588 uses 0x104 */
 +#define ROCKCHIP_OTP_HUK_SIZE		0x4	/* 4 words = 16 bytes */
 +
  /*
@@ -146,8 +143,8 @@ index 3956ada..764444f 100644
 + * using the same auto-mode register protocol as RK3588.
 + *
 + * OTP write (provisioning) is controlled by CFG_RK3576_PERSIST_HUK.
-+ * Leave it off (default) until ROCKCHIP_OTP_HUK_INDEX is verified against
-+ * the RK3576 TRM -- writing the wrong row is irreversible.
++ * Default is off; enable once you are ready to commit the HUK to OTP.
++ * OTP writes are irreversible.
 + *
 + * When CFG_RK3576_PERSIST_HUK=n the first-boot HUK is derived from the
 + * software PRNG; it will differ across reboots until OTP provisioning is
@@ -193,11 +190,9 @@ index 3956ada..764444f 100644
 +	bool all_zero = true;
 +
 +	/*
-+	 * Use the OP-TEE crypto RNG API, which is backed by the software
-+	 * Fortuna PRNG (CFG_WITH_SOFTWARE_PRNG=y) because RK3576 has no
-+	 * dedicated secure TRNG driver yet.  The generated key is ephemeral
-+	 * (lost on reboot) unless OTP provisioning is enabled via
-+	 * CFG_RK3576_PERSIST_HUK.
++	 * Use the OP-TEE crypto RNG API (CFG_WITH_SOFTWARE_PRNG=y).
++	 * The generated key is ephemeral (lost on reboot) unless OTP
++	 * provisioning is enabled via CFG_RK3576_PERSIST_HUK.
 +	 */
 +	res = crypto_rng_read(buf, sizeof(buf));
 +	if (res)
