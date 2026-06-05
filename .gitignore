@@ -13,6 +13,7 @@ fit-build/
 .DS_Store
 *.swp
 *~
+dirty
 
 # --- Keep these ---
 !out/rk3576-optee.dts
