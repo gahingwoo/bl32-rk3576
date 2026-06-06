@@ -1,0 +1,42 @@
+From b97f9a40d77a2ea2e4489e5a1c737a2040df6c0d Mon Sep 17 00:00:00 2001
+From: Jiaxing Hu <huhuvmb88@outlook.com>
+Date: Sat, 6 Jun 2026 13:40:36 +1200
+Subject: [PATCH 2/6] plat-rockchip: rk3576: switch debug UART to UART0 and
+ force early console
+
+Match TF-A's RK_DBG_UART_BASE (UART0 @ 0x2ad40000) so OP-TEE boot
+messages appear on the same serial line as the BL31 log.
+
+Also force CFG_EARLY_CONSOLE=y: TF-A does not pass a DT pointer to
+BL32, so the DT-based console probe never runs.  Without the early
+console OP-TEE produces no output on this platform.
+
+Tested on Radxa Rock 4D (RK3576, 12 GiB LPDDR5).
+
+Signed-off-by: Jiaxing Hu <huhuvmb88@gmail.com>
+---
+ core/arch/arm/plat-rockchip/conf.mk | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/core/arch/arm/plat-rockchip/conf.mk b/core/arch/arm/plat-rockchip/conf.mk
+index f57f446c0..953fca472 100644
+--- a/core/arch/arm/plat-rockchip/conf.mk
++++ b/core/arch/arm/plat-rockchip/conf.mk
+@@ -92,6 +92,14 @@ CFG_TZDRAM_START ?= 0x70000000
+ CFG_TZDRAM_SIZE  ?= 0x02000000
+ CFG_SHMEM_START  ?= 0x72000000
+ CFG_SHMEM_SIZE   ?= 0x00400000
++
++# Debug UART -- match TF-A's RK_DBG_UART_BASE (UART0 @ 0x2ad40000) so the
++# OP-TEE banner appears on the same serial cable as the BL31 log.
++CFG_EARLY_CONSOLE := y
++CFG_EARLY_CONSOLE_BASE ?= UART0_BASE
++CFG_EARLY_CONSOLE_SIZE ?= UART0_SIZE
++CFG_EARLY_CONSOLE_BAUDRATE ?= 1500000
++CFG_EARLY_CONSOLE_CLK_IN_HZ ?= 24000000
+ endif
+ 
+ ifeq ($(platform-flavor-armv8),1)
+-- 
+2.43.0
+
