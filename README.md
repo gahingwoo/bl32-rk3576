@@ -42,23 +42,7 @@ cd optee_os
 git apply ../0001-plat-rockchip-add-RK3576-platform-support.patch
 ```
 
-### `0002-tfa-rk3576-fix-GICV2_G0_FOR_EL3-for-SPD-opteed.patch`
-Apply to **TF-A** (`plat/rockchip/rk3576/platform.mk`).
-
-RK3576 TF-A hardcoded `GICV2_G0_FOR_EL3 := 1`, routing all Group-0
-secure interrupts to EL3. With `SPD=opteed` this causes
-`register_interrupt_type_handler()` to return `-EINVAL` and
-`opteed_main.c` to `panic()` immediately after OP-TEE returns from
-init → reset loop.
-
-Fix: make `GICV2_G0_FOR_EL3` conditional on `SPD`.
-
-```bash
-cd tfa
-git apply ../0002-tfa-rk3576-fix-GICV2_G0_FOR_EL3-for-SPD-opteed.patch
-```
-
-### `0003-optee-rk3576-switch-debug-uart-to-uart0-force-early-console.patch`
+### `0002-optee-rk3576-switch-debug-uart-to-uart0-force-early-console.patch`
 Apply to **OP-TEE OS**.
 
 TF-A RK3576 uses UART0 @ `0x2ad40000` as its debug console. OP-TEE
@@ -67,10 +51,10 @@ defaulted to UART2. TF-A does not pass a DT pointer to BL32, so
 
 ```bash
 cd optee_os
-git apply ../0003-optee-rk3576-switch-debug-uart-to-uart0-force-early-console.patch
+git apply ../0002-optee-rk3576-switch-debug-uart-to-uart0-force-early-console.patch
 ```
 
-### `0004-optee-rk3576-add-otp-huk-derivation.patch`
+### `0003-optee-rk3576-add-otp-huk-derivation.patch`
 Apply to **OP-TEE OS**.
 
 Implements `tee_otp_get_hw_unique_key()` for RK3576 via the shared
@@ -84,10 +68,10 @@ SW-PRNG key on unprogrammed boards.
 
 ```bash
 cd optee_os
-git apply ../0004-optee-rk3576-add-otp-huk-derivation.patch
+git apply ../0003-optee-rk3576-add-otp-huk-derivation.patch
 ```
 
-### `0005-optee-rk3576-explicit-sw-prng.patch`
+### `0004-optee-rk3576-explicit-sw-prng.patch`
 Apply to **OP-TEE OS**.
 
 Forces `CFG_WITH_SOFTWARE_PRNG=y`. The Secure TRNG at `0x2a440000`
@@ -96,7 +80,7 @@ PRNG until the TRNG address is confirmed from the RK3576 TRM.
 
 ```bash
 cd optee_os
-git apply ../0005-optee-rk3576-explicit-sw-prng.patch
+git apply ../0004-optee-rk3576-explicit-sw-prng.patch
 ```
 
 ---
