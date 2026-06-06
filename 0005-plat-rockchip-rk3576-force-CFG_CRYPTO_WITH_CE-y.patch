@@ -1,9 +1,9 @@
-From c2eb321387c0d01abb4f3434a74178de3a219f7d Mon Sep 17 00:00:00 2001
+From 68632b05dc942a5ee95176a91369c0e3e8143b95 Mon Sep 17 00:00:00 2001
 From: Jiaxing Hu <huhuvmb88@outlook.com>
-Date: Sat, 6 Jun 2026 13:56:33 +1200
+Date: Sat, 6 Jun 2026 14:27:34 +1200
 Subject: [PATCH 5/6] plat-rockchip: rk3576: force CFG_CRYPTO_WITH_CE=y
 
-Cortex-A55 and Cortex-A72 both implement ARMv8 Cryptographic
+Cortex-A72 and Cortex-A53 both implement ARMv8 Cryptographic
 Extensions (AES, SHA-1, SHA-256, SHA-512).  Force CE-accelerated
 crypto as RK3588 does.
 

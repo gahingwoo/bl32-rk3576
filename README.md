@@ -86,7 +86,7 @@ Two ordering issues solved:
 
 ### `0005` — Force `CFG_CRYPTO_WITH_CE=y`
 
-Cortex-A55 and A72 both implement ARMv8 Cryptographic Extensions.
+Cortex-A72 and A53 both implement ARMv8 Cryptographic Extensions.
 Matches RK3588 behaviour.
 
 ### `0006` — Secure Boot PTA (RSA-2048) *(Co-authored: the-gabe)*
