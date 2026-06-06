@@ -26,6 +26,7 @@ TRM and enabling them blindly risks bricking the chip.
 Tested on Radxa Rock 4D (RK3576, 12 GiB LPDDR5) with TF-A v2.14
 and U-Boot 2026.04.
 
+Reviewed-by: the-gabe <105918853+the-gabe@users.noreply.github.com>
 Signed-off-by: gahingwoo <huhuvmb88@outlook.com>
 ---
  core/arch/arm/plat-rockchip/conf.mk           | 34 ++++++++

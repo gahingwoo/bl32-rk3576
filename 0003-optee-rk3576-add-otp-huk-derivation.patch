@@ -29,6 +29,7 @@ platform_rk3576.c:
   - tee_otp_get_hw_unique_key(): mutex-protected, in-memory cache;
     tries OTP, falls back to PRNG with an IMSG noting the state.
 
+Co-developed-by: the-gabe <105918853+the-gabe@users.noreply.github.com>
 Signed-off-by: gahingwoo <huhuvmb88@outlook.com>
 ---
  core/arch/arm/plat-rockchip/conf.mk           |  14 +-
