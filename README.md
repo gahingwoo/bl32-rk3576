@@ -38,7 +38,7 @@ All patches apply to **OP-TEE OS** on top of commit `ccb894f`.
 
 ```bash
 cd optee_os
-git apply ../0001-plat-rockchip-add-RK3576-platform-support.patch
+git apply ../0001-plat-rockchip-add-support-for-RK3576.patch
 git apply ../0002-plat-rockchip-rk3576-switch-debug-UART-to-UART0-and-.patch
 git apply ../0003-plat-rockchip-rk3576-add-OTP-HUK-derivation-via-Secu.patch
 git apply ../0004-plat-rockchip-rk3576-add-RKRNG_S-hardware-TRNG-drive.patch

@@ -1,4 +1,4 @@
-From 68632b05dc942a5ee95176a91369c0e3e8143b95 Mon Sep 17 00:00:00 2001
+From 5166bcc1c98b4047b8e739002f1205db2ba54a60 Mon Sep 17 00:00:00 2001
 From: Jiaxing Hu <huhuvmb88@outlook.com>
 Date: Sat, 6 Jun 2026 14:27:34 +1200
 Subject: [PATCH 5/6] plat-rockchip: rk3576: force CFG_CRYPTO_WITH_CE=y
@@ -10,7 +10,7 @@ crypto as RK3588 does.
 Tested on Radxa Rock 4D: check_crypto_extensions() passes, xtest
 113/1 (baseline unchanged).
 
-Signed-off-by: Jiaxing Hu <huhuvmb88@gmail.com>
+Signed-off-by: Jiaxing Hu <huhuvmb88@outlook.com>
 ---
  core/arch/arm/plat-rockchip/conf.mk | 1 +
  1 file changed, 1 insertion(+)

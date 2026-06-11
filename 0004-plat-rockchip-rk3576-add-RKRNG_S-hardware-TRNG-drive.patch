@@ -1,4 +1,4 @@
-From 9035b4248b6728cd48601f44a5d44785cd25c4d7 Mon Sep 17 00:00:00 2001
+From 047abc0cecb9fd9383a32e43eab2e23c399deac8 Mon Sep 17 00:00:00 2001
 From: Jiaxing Hu <huhuvmb88@outlook.com>
 Date: Sat, 6 Jun 2026 13:42:05 +1200
 Subject: [PATCH 4/6] plat-rockchip: rk3576: add RKRNG_S hardware TRNG driver
@@ -32,7 +32,7 @@ Tested on Radxa Rock 4D (RK3576, 12 GiB LPDDR5):
   I/TC: RK3576: RKRNG_S hardware RNG ready
   xtest: 113 test cases, 1 failed (baseline, unrelated to this change)
 
-Signed-off-by: Jiaxing Hu <huhuvmb88@gmail.com>
+Signed-off-by: Jiaxing Hu <huhuvmb88@outlook.com>
 ---
  core/arch/arm/plat-rockchip/conf.mk           |  14 ++-
  core/arch/arm/plat-rockchip/platform_config.h |   8 +-
@@ -95,7 +95,7 @@ index b95c86337..984f2861b 100644
   */
  #define OTP_S_BASE			0x2a480000
 diff --git a/core/arch/arm/plat-rockchip/platform_rk3576.c b/core/arch/arm/plat-rockchip/platform_rk3576.c
-index 6ae18e1bf..e8ab12b19 100644
+index 18c6c9ec5..d78cd202e 100644
 --- a/core/arch/arm/plat-rockchip/platform_rk3576.c
 +++ b/core/arch/arm/plat-rockchip/platform_rk3576.c
 @@ -6,6 +6,8 @@
@@ -123,7 +123,7 @@ index 6ae18e1bf..e8ab12b19 100644
  register_phys_mem_pgdir(MEM_AREA_IO_SEC, OTP_S_BASE, OTP_S_SIZE);
  
  int platform_secure_ddr_region(int rgn, paddr_t st, size_t sz)
-@@ -222,3 +226,47 @@ out:
+@@ -217,3 +221,47 @@ out:
  	mutex_unlock(&huk_mutex);
  	return res;
  }

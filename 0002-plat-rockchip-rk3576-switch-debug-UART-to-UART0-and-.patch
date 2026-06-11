@@ -1,4 +1,4 @@
-From b97f9a40d77a2ea2e4489e5a1c737a2040df6c0d Mon Sep 17 00:00:00 2001
+From 15266bdd7b2166c9347cdf0d925ff0c3ff3aee8c Mon Sep 17 00:00:00 2001
 From: Jiaxing Hu <huhuvmb88@outlook.com>
 Date: Sat, 6 Jun 2026 13:40:36 +1200
 Subject: [PATCH 2/6] plat-rockchip: rk3576: switch debug UART to UART0 and
@@ -13,7 +13,7 @@ console OP-TEE produces no output on this platform.
 
 Tested on Radxa Rock 4D (RK3576, 12 GiB LPDDR5).
 
-Signed-off-by: Jiaxing Hu <huhuvmb88@gmail.com>
+Signed-off-by: Jiaxing Hu <huhuvmb88@outlook.com>
 ---
  core/arch/arm/plat-rockchip/conf.mk | 8 ++++++++
  1 file changed, 8 insertions(+)

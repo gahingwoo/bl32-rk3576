@@ -1,6 +1,6 @@
-From 38b18cd2b7d484def9a2b1cc5f78df9818d09151 Mon Sep 17 00:00:00 2001
+From 890417e80da877778398d0efa28392e816331ea2 Mon Sep 17 00:00:00 2001
 From: Jiaxing Hu <huhuvmb88@outlook.com>
-Date: Sat, 6 Jun 2026 14:15:59 +1200
+Date: Sat, 6 Jun 2026 14:17:25 +1200
 Subject: [PATCH 6/6] plat-rockchip: rk3576: add secure boot PTA support
  (RSA-2048)
 
@@ -31,57 +31,176 @@ Also fix rk_secure_boot.c to support variable RSA hash sizes:
 Tested on Radxa Rock 4D (RK3576, 12 GiB LPDDR5) with simulation=y:
 PTA registers correctly, xtest 113/1 (baseline unchanged).
 
-Co-developed-by: the-gabe <105918853+the-gabe@users.noreply.github.com>
-Signed-off-by: Jiaxing Hu <huhuvmb88@gmail.com>
+Co-authored-by: the-gabe <105918853+the-gabe@users.noreply.github.com>
+Signed-off-by: Jiaxing Hu <huhuvmb88@outlook.com>
 ---
- core/arch/arm/plat-rockchip/conf.mk           |  6 ++
- core/arch/arm/plat-rockchip/platform_config.h | 15 +++++
+ core/arch/arm/plat-rockchip/conf.mk           | 19 +++---
+ core/arch/arm/plat-rockchip/platform_config.h | 20 +++---
+ core/arch/arm/plat-rockchip/platform_rk3576.c | 25 -------
+ core/arch/arm/plat-rockchip/rockchip_rkrng.c  | 11 ----
+ core/arch/arm/plat-rockchip/rockchip_rkrng.h  |  2 -
  core/pta/rockchip/rk_secure_boot.c            | 66 +++++++++++++------
- 3 files changed, 68 insertions(+), 19 deletions(-)
+ 6 files changed, 64 insertions(+), 79 deletions(-)
 
 diff --git a/core/arch/arm/plat-rockchip/conf.mk b/core/arch/arm/plat-rockchip/conf.mk
-index 739f21194..f4b01a6a4 100644
+index 739f21194..0d88a7901 100644
 --- a/core/arch/arm/plat-rockchip/conf.mk
 +++ b/core/arch/arm/plat-rockchip/conf.mk
-@@ -100,6 +100,12 @@ CFG_SHMEM_SIZE   ?= 0x00400000
- # provisioning) is gated by CFG_RK3576_PERSIST_HUK which defaults to n.
+@@ -94,24 +94,21 @@ CFG_TZDRAM_SIZE  ?= 0x02000000
+ CFG_SHMEM_START  ?= 0x72000000
+ CFG_SHMEM_SIZE   ?= 0x00400000
+ 
+-# Enable the shared Rockchip Secure OTP driver (read path).
+-# ROCKCHIP_OTP_HUK_INDEX = 0x80 (OTP_S words 0x80–0x83, bytes 512–527)
+-# confirmed for RK3576 — differs from RK3588 (0x104).  Writing (OTP
+-# provisioning) is gated by CFG_RK3576_PERSIST_HUK which defaults to n.
  $(call force,CFG_ROCKCHIP_OTP,y)
  
+-# RKRNG_S hardware TRNG (0x2a440000).
+-# Set CFG_RK3576_RKRNG=y to provide hw_get_random_bytes() using real hardware
+-# entropy.  When enabled, plat_get_random_stack_canaries() is also overridden
+-# to read RKRNG directly (core_init_mmu_map runs before thread_init_canaries,
+-# so the IO mapping is already live), allowing CFG_WITH_SOFTWARE_PRNG=n.
 +CFG_RK_SECURE_BOOT ?= y
-+# Disable CFG_RK_SECURE_BOOT_SIMULATION to actually fuse the RSA key hash
-+# into OTP.  Enabling this is necessary to activate secure boot but is
-+# irreversible and may brick the device if the wrong key hash is burned.
++# Disable CFG_RK_SECURE_BOOT_SIMULATION to actually fuse the hash into the OTP.
++# Enabling this option is necessary to actually enable secure boot, but may
++# potentially brick your device.
 +CFG_RK_SECURE_BOOT_SIMULATION ?= y
 +
- # RKRNG_S hardware TRNG (0x2a440000).
- # Set CFG_RK3576_RKRNG=y to provide hw_get_random_bytes() using real hardware
- # entropy.  When enabled, plat_get_random_stack_canaries() is also overridden
++# Enable RKRNG_S hardware TRNG; automatically sets CFG_WITH_SOFTWARE_PRNG=n.
+ CFG_RK3576_RKRNG ?= n
+ ifeq ($(CFG_RK3576_RKRNG),y)
+ $(call force,CFG_WITH_SOFTWARE_PRNG,n)
+ endif
+ 
+-# Debug UART -- match TF-A's RK_DBG_UART_BASE (UART0 @ 0x2ad40000) so the
+-# OP-TEE banner appears on the same serial cable as the BL31 log.
++# Debug UART -- match TF-A's RK_DBG_UART_BASE (UART0 @ 0x2ad40000).
+ CFG_EARLY_CONSOLE := y
+ CFG_EARLY_CONSOLE_BASE ?= UART0_BASE
+ CFG_EARLY_CONSOLE_SIZE ?= UART0_SIZE
 diff --git a/core/arch/arm/plat-rockchip/platform_config.h b/core/arch/arm/plat-rockchip/platform_config.h
-index 984f2861b..c91e03c91 100644
+index 984f2861b..6be36276a 100644
 --- a/core/arch/arm/plat-rockchip/platform_config.h
 +++ b/core/arch/arm/plat-rockchip/platform_config.h
-@@ -170,6 +170,21 @@
- #define ROCKCHIP_OTP_HUK_INDEX		0x80	/* RK3576 confirmed; RK3588 uses 0x104 */
- #define ROCKCHIP_OTP_HUK_SIZE		0x4	/* 4 words = 16 bytes */
+@@ -152,23 +152,21 @@
+ #define PMU1SGRF_FW_BASE	0x26003000
+ #define PMU1SGRF_FW_SIZE	SIZE_K(4)
  
-+/*
-+ * Secure Boot OTP layout (cross-referenced against Rockchip vendor U-Boot
-+ * secure OTP driver whitelisted byte ranges):
-+ *   Status word : OTP_S word 0x8  (bytes [32, 33])
-+ *   RSA key hash: OTP_S words 0x184-0x187 (bytes [1552, 1567]) — SHA-256 of
-+ *                 the RSA-2048 public key, 4 x 32-bit words (128-bit hash)
-+ * RK3576 only supports RSA-2048; no RSA4096 status bit is defined.
-+ */
+-/*
+- * RKRNG_S -- secure-side true RNG (RKRNG IP, distinct from RK3588's TRNG_V1).
+- * Registers: CTRL=0x10, STATE=0x14, DATA0=0x50 (8x32-bit = 256 bits/req).
+- */
+ #define RKRNG_S_BASE			0x2a440000
+ #define RKRNG_S_SIZE			SIZE_K(64)
+ 
+-/*
+- * Secure OTP (OTP_S) -- accessible from secure world only.
+- * HUK: words 0x80–0x83 (bytes 512–527, 128-bit).
+- * RK3576 OTP_S is 512 words (0x200 max), smaller than RK3588 (0x300).
+- */
+ #define OTP_S_BASE			0x2a480000
+ #define OTP_S_SIZE			SIZE_K(64)
+ 
+-#define ROCKCHIP_OTP_HUK_INDEX		0x80	/* RK3576 confirmed; RK3588 uses 0x104 */
+-#define ROCKCHIP_OTP_HUK_SIZE		0x4	/* 4 words = 16 bytes */
++#define ROCKCHIP_OTP_HUK_INDEX		0x80	/* differs from RK3588 (0x104) */
++#define ROCKCHIP_OTP_HUK_SIZE		0x4
++
 +#define ROCKCHIP_OTP_SECURE_BOOT_STATUS_INDEX	0x8
 +#define ROCKCHIP_OTP_SECURE_BOOT_STATUS_SIZE	0x1
 +#define ROCKCHIP_OTP_SECURE_BOOT_STATUS_ENABLE	0x00ff
 +
 +#define ROCKCHIP_OTP_RSA_HASH_INDEX		0x184
-+#define ROCKCHIP_OTP_RSA_HASH_SIZE		0x4	/* RSA-2048: 4 words = 16 bytes */
-+
++#define ROCKCHIP_OTP_RSA_HASH_SIZE		0x4
+ 
  #else
  #error "Unknown platform flavor"
- #endif
+diff --git a/core/arch/arm/plat-rockchip/platform_rk3576.c b/core/arch/arm/plat-rockchip/platform_rk3576.c
+index d78cd202e..f09279659 100644
+--- a/core/arch/arm/plat-rockchip/platform_rk3576.c
++++ b/core/arch/arm/plat-rockchip/platform_rk3576.c
+@@ -61,22 +61,6 @@ int platform_secure_ddr_region(int rgn, paddr_t st, size_t sz)
+ 	return 0;
+ }
+ 
+-/* -----------------------------------------------------------------------
+- * Hardware Unique Key (HUK) -- Secure OTP-backed key derivation
+- *
+- * The shared rockchip_otp.c driver programs the Secure OTP at OTP_S_BASE
+- * using the same auto-mode register protocol as RK3588.
+- *
+- * OTP write (provisioning) is controlled by CFG_RK3576_PERSIST_HUK.
+- * Default is off; enable once you are ready to commit the HUK to OTP.
+- * OTP writes are irreversible.
+- *
+- * When CFG_RK3576_PERSIST_HUK=n the first-boot HUK is derived from the
+- * software PRNG; it will differ across reboots until OTP provisioning is
+- * enabled.  This is intentional: it keeps Stage-1 bringup safe.
+- * -----------------------------------------------------------------------
+- */
+-
+ static struct mutex huk_mutex = MUTEX_INITIALIZER;
+ static struct tee_hw_unique_key *huk_cache;
+ 
+@@ -222,15 +206,6 @@ out:
+ 	return res;
+ }
+ 
+-/* -----------------------------------------------------------------------
+- * Early stack-canary entropy (CFG_RK3576_RKRNG=y, CFG_WITH_SOFTWARE_PRNG=n)
+- *
+- * core_init_mmu_map() runs in entry_a64.S before thread_init_canaries(), so
+- * the RKRNG_S_BASE IO region is already mapped and phys_to_virt_io() works.
+- * This override lets us disable the SW PRNG while still seeding canaries
+- * from real hardware entropy.
+- * -----------------------------------------------------------------------
+- */
+ #ifdef CFG_RK3576_RKRNG
+ void plat_get_random_stack_canaries(void *buf, size_t ncan, size_t size)
+ {
+diff --git a/core/arch/arm/plat-rockchip/rockchip_rkrng.c b/core/arch/arm/plat-rockchip/rockchip_rkrng.c
+index 2f6e55a52..dfc056d64 100644
+--- a/core/arch/arm/plat-rockchip/rockchip_rkrng.c
++++ b/core/arch/arm/plat-rockchip/rockchip_rkrng.c
+@@ -1,11 +1,6 @@
+ // SPDX-License-Identifier: BSD-2-Clause
+ /*
+  * Rockchip RKRNG secure TRNG driver for RK3576.
+- *
+- * The RKRNG IP is found on RK3576/RK3562/RK3528. This driver targets the
+- * secure instance (RKRNG_S_BASE) accessible only from secure world.
+- *
+- * Register layout matches the Linux rockchip-rng.c driver (rk3576_rng_*).
+  */
+ 
+ #include <initcall.h>
+@@ -58,12 +53,6 @@ TEE_Result hw_get_random_bytes(void *buf, size_t len)
+ 
+ 	exceptions = cpu_spin_lock_xsave(&rkrng_lock);
+ 
+-	/*
+-	 * Lazy-map on first use: hw_get_random_bytes() may be called from
+-	 * service_init context (e.g. HUK derivation) before driver_init()
+-	 * has run.  phys_to_virt_io() is safe here because core_init_mmu_map
+-	 * runs in entry_a64.S well before any initcall.
+-	 */
+ 	if (!rkrng_base)
+ 		rkrng_base = (vaddr_t)phys_to_virt_io(RKRNG_S_BASE,
+ 						       RKRNG_S_SIZE);
+diff --git a/core/arch/arm/plat-rockchip/rockchip_rkrng.h b/core/arch/arm/plat-rockchip/rockchip_rkrng.h
+index 64b95ce1a..3a2c20f17 100644
+--- a/core/arch/arm/plat-rockchip/rockchip_rkrng.h
++++ b/core/arch/arm/plat-rockchip/rockchip_rkrng.h
+@@ -1,8 +1,6 @@
+ /* SPDX-License-Identifier: BSD-2-Clause */
+ /*
+  * Rockchip RKRNG register definitions (RK3576/RK3562/RK3528).
+- * Used by both the driver (rockchip_rkrng.c) and the early platform
+- * canary override (platform_rk3576.c).
+  */
+ 
+ #ifndef ROCKCHIP_RKRNG_H
 diff --git a/core/pta/rockchip/rk_secure_boot.c b/core/pta/rockchip/rk_secure_boot.c
 index fe762b5f0..31817ab6b 100644
 --- a/core/pta/rockchip/rk_secure_boot.c

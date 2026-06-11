@@ -1,6 +1,6 @@
-From 24f6e428e1c6e556bf9bb247d0cb0b8a7db5a5c4 Mon Sep 17 00:00:00 2001
+From 28adface1f767a002cb76f2e3c8ad7b25cc275e5 Mon Sep 17 00:00:00 2001
 From: Jiaxing Hu <huhuvmb88@outlook.com>
-Date: Sat, 6 Jun 2026 14:15:59 +1200
+Date: Sat, 6 Jun 2026 14:17:25 +1200
 Subject: [PATCH 3/6] plat-rockchip: rk3576: add OTP HUK derivation via Secure
  OTP
 
@@ -20,8 +20,8 @@ the HUK permanently on next boot.
 Tested on Radxa Rock 4D (RK3576, 12 GiB LPDDR5): OTP read succeeds,
 secure storage initialises correctly.
 
-Co-developed-by: the-gabe <105918853+the-gabe@users.noreply.github.com>
-Signed-off-by: Jiaxing Hu <huhuvmb88@gmail.com>
+Co-authored-by: the-gabe <105918853+the-gabe@users.noreply.github.com>
+Signed-off-by: Jiaxing Hu <huhuvmb88@outlook.com>
 ---
  core/arch/arm/plat-rockchip/conf.mk           |   6 +
  core/arch/arm/plat-rockchip/platform_config.h |  12 ++
@@ -69,7 +69,7 @@ index fe2ebf9bb..b95c86337 100644
  #error "Unknown platform flavor"
  #endif
 diff --git a/core/arch/arm/plat-rockchip/platform_rk3576.c b/core/arch/arm/plat-rockchip/platform_rk3576.c
-index 9c23f8182..6ae18e1bf 100644
+index b574303e8..18c6c9ec5 100644
 --- a/core/arch/arm/plat-rockchip/platform_rk3576.c
 +++ b/core/arch/arm/plat-rockchip/platform_rk3576.c
 @@ -4,11 +4,18 @@
@@ -99,7 +99,7 @@ index 9c23f8182..6ae18e1bf 100644
  
  int platform_secure_ddr_region(int rgn, paddr_t st, size_t sz)
  {
-@@ -53,3 +61,164 @@ int platform_secure_ddr_region(int rgn, paddr_t st, size_t sz)
+@@ -48,3 +56,164 @@ int platform_secure_ddr_region(int rgn, paddr_t st, size_t sz)
  
  	return 0;
  }
